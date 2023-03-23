@@ -1,94 +1,37 @@
-const fs = require("fs");
-const chalk = require("chalk");
+const { Client, Collection } = require('discord.js');
+const { prefix, token } = require('./config.json');
+const fs = require('fs');
 
-const { Client, Collection, GatewayIntentBits, EmbedBuilder } = require("discord.js");
-const { DEFAULT_PREFIX, BOT_TOKEN, ERROR_LOGS_CHANNEL, YT_COOKIE } = require("./config.json");
-const { loadCommands } = require("./handler/loadCommands");
-const { loadEvents } = require("./handler/loadEvents");
-const { loadSlashCommands } = require("./handler/loadSlashCommands")
-const { loadPlayerEvents } = require("./handler/loadPlayerEvents");
-const { DiscordTogether } = require('discord-together');
-const { Player } = require('discord-player');
-const Enmap = require("enmap");
-
-const client = new Client({
-  allowedMentions: { parse: ["users", "roles"] },
-  intents: 47007
-});
-const { checkValid } = require("./functions/validation/checkValid");
-const Embeds = require("./functions/embeds/Embeds");
-const Logger = require("./functions/Logger/Logger");
-const Util = require("./functions/util/Util");
-
-client.discordTogether = new DiscordTogether(client);
+const client = new Client();
 client.commands = new Collection();
-client.slash = new Collection();
-client.aliases = new Collection();
-client.categories = fs.readdirSync("./Commands/");
-client.setMaxListeners(0);
-const Cookie = YT_COOKIE;
-client.logger = Logger;
-client.utils = Util;
-client.say = Embeds;
-const player = new Player(client, {
-  leaveOnEnd: true,
-  leaveOnStop: true,
-  leaveOnEmpty: false,
-  leaveOnEmptyCooldown: 60000,
-  autoSelfDeaf: true,
-  initialVolume: 130,
-  ytdlDownloadOptions: {
-    requestOptions: {
-      headers: {
-        cookie: Cookie,
-      }
+
+const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
+
+for (const file of commandFiles) {
+    const command = require(`./commands/${file}`);
+    client.commands.set(command.name, command);
+}
+
+client.once('ready', () => {
+    console.log('Bot is ready!');
+});
+
+client.on('message', message => {
+    if (!message.content.startsWith(prefix) || message.author.bot) return;
+
+    const args = message.content.slice(prefix.length).trim().split(/ +/);
+    const commandName = args.shift().toLowerCase();
+
+    const command = client.commands.get(commandName) || client.commands.find(cmd => cmd.aliases && cmd.aliases.includes(commandName));
+
+    if (!command) return;
+
+    try {
+        command.execute(message, args);
+    } catch (error) {
+        console.error(error);
+        message.reply('An error occurred while trying to execute that command!');
     }
-  },
 });
 
-client.player = player;
-client.db = new Enmap({ name: "musicdb" });
-
-loadCommands(client);
-loadEvents(client);
-loadPlayerEvents(client);
-loadSlashCommands(client);
-checkValid();
-
-// Error Handling
-
-process.on("uncaughtException", (err) => {
-  console.log("Uncaught Exception: " + err);
-
-  const exceptionembed = new EmbedBuilder()
-  .setTitle("Uncaught Exception")
-  .setDescription(`${err}`)
-  .setColor("Red")
-  client.channels.cache.get(ERROR_LOGS_CHANNEL).send({ embeds: [exceptionembed] })
-});
-
-process.on("unhandledRejection", (reason, promise) => {
-  console.log(
-    "[FATAL] Possibly Unhandled Rejection at: Promise ",
-    promise,
-    " reason: ",
-    reason.message
-  );
-
-   const rejectionembed = new EmbedBuilder()
-  .setTitle("Unhandled Promise Rejection")
-  .addFields([
-    { name: "Promise", value: `${promise}` },
-    { name: "Reason", value: `${reason.message}` },
-  ])
-  .setColor("Red")
-  client.channels.cache.get(ERROR_LOGS_CHANNEL).send({ embeds: [rejectionembed] })
-});
-
-client.login(BOT_TOKEN).then(() => {
-  console.log(
-    chalk.bgBlueBright.black(
-      ` Successfully logged in as: ${client.user.tag}`
-    )
-  );
-});
+client.login(token);
